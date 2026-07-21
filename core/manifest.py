@@ -141,5 +141,7 @@ def test_cycle_is_detected():
 if __name__ == "__main__":
     import sys
 
-    test_load_real_manifest()
-    test_topo_order_respects_dependencies()
+    from testkit import run_module_tests
+
+    exit_code = run_module_tests(globals())
+    sys.exit(exit_code)
