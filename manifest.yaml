@@ -1,0 +1,63 @@
+version: 1
+
+# 业务配置：改这里的值和 prompts/ 即可切换到其他领域。
+project:
+  name: demo
+  display_name: "Bugpilot Demo Pipeline"
+  branch_prefix: "bugpilot"
+  # verify 阶段在工作区里运行、用于验证修复的命令。
+  verify_command:
+    - python3
+    - -c
+    - "print('tests passed')"
+
+# phase 描述了这个阶段的细节：由哪个 executor 驱动、产出哪个文件等。
+# 引擎负责调度，executor 只填产物。新增 phase 只需改本文件并注册 executor，无需改引擎。
+phases:
+  - id: intake
+    executor: intake
+    prompt: null
+    depends_on: []
+    output: 01-intake.md
+    required_sections:
+      - "## Summary"
+      - "## Inputs"
+
+  - id: analyze
+    executor: analyze
+    prompt: prompts/analyze.md
+    depends_on:
+      - intake
+    output: 02-analyze.md
+    required_sections:
+      - "## Root Cause"
+      - "## Plan"
+
+  - id: fix
+    executor: fix
+    prompt: prompts/fix.md
+    depends_on:
+      - analyze
+    output: 03-fix.md
+    required_sections:
+      - "## Changes"
+      - "## Self Check"
+
+  - id: apply
+    executor: apply
+    prompt: null
+    depends_on:
+      - fix
+    output: 04-apply.md
+    required_sections:
+      - "## Applied"
+
+  - id: verify
+    executor: verify
+    prompt: null
+    depends_on:
+      - apply
+    output: 05-verify.md
+    required_sections:
+      - "## Verdict"
+      - "## Evidence"
