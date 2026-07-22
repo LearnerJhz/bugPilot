@@ -104,10 +104,12 @@ class PhaseSpec:
     # 可变默认值（list/dict/set）必须使用 default_factory，否则会在多个实例间共享。
     depends_on: list[str] = field(default_factory=list)
 
-    # 输出必须包含的标题；用于校验完整性
+    # 输出必须包含的标题；Gate Check 用它校验 Agent 写回产物的完整性
     required_sections: list[str] = field(default_factory=list)
 
-    # 交给执行器（通常是 LLM）的可选提示词；未使用时为 None
+    # 该阶段 prompt 模板的路径（相对项目根）；引擎据它编译 `_prompt_<phase>.md`
+    # 交给外部 Agent。确定性阶段（intake/apply/verify）无需 prompt，为 None。
+    # 注意：引擎自己从不调用大模型，只负责把模板拼成 prompt 文件。
     prompt: Optional[str] = None
 
 # 整个过程的状态
@@ -119,11 +121,20 @@ class RunStatus(str, Enum):
 
 # 断点续跑，引擎用
 class PhaseStatus(str, Enum):
-    PENDING = "pending"
+    PENDING = "pending"        # 也用于"已写占位产物、正等 Agent 干活"这一态
     RUNNING = "running"
     SUCCEEDED = "succeeded"
     FAILED = "failed"
     SKIPPED = "skipped"
+
+
+# --------------------------------------------------------------------------
+# Agent 驱动契约：占位产物哨兵
+# --------------------------------------------------------------------------
+# 引擎为 AI 阶段写占位产物时会嵌入这句。只要产物里还含它，就说明 Agent 还没
+# 把真正的结论写回来 —— 引擎据此原地退出（不做 Gate Check、不重试），等下次被
+# Agent 重新调用。这是整个"Agent 驱动"模型里判断"到底干没干活"的唯一开关。
+AGENT_PENDING_SENTINEL = "[Awaiting agent execution"
 
 
 # --------------------------------------------------------------------------
@@ -151,24 +162,6 @@ class RunState:
     started_at: str = field(default_factory=utc_now_iso)
     updated_at: str = field(default_factory=utc_now_iso)
 
-
-# --------------------------------------------------------------------------
-# 补丁契约（LLM 提出方案 -> 确定性代码执行应用）
-# --------------------------------------------------------------------------
-@dataclass
-class FileEdit:
-    """单个文件改动。要么是完整的 ``new_content``（创建/覆盖），
-    要么是一段可应用的统一 ``diff``。刻意做成结构化形式，使应用步骤保持
-    确定性，绝不重新解读自由格式的 LLM 文本。"""
-
-    path: str
-    new_content: Optional[str] = None
-    diff: str = ""
-
-@dataclass
-class PatchProposal:
-    """修复器所*提出*的方案。应用它是一个独立的、确定性的步骤——
-    LLM 从不直接触碰文件系统。"""
-
-    summary: str = ""
-    edits: list[FileEdit] = field(default_factory=list)
+# 说明：本引擎刻意不定义"补丁提案（PatchProposal）"之类的结构化改动契约。
+# 在 Agent 驱动模型里，代码改动由外部 Agent 在自己的工作区（专用分支 / worktree）
+# 里直接落盘；引擎既不代 Agent 动源码，也不解析、不应用任何 LLM 产出的补丁。

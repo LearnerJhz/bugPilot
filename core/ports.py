@@ -1,8 +1,12 @@
 """端口（Ports）：外部世界插入内核的接缝。
 
 这里只有接口，没有任何实现。编排器（orchestrator）只与这些 Protocol 对话，
-绝不直接依赖具体类（openai、git、文件系统……）。这层间接正是关键所在：
+绝不直接依赖具体类（git、文件系统……）。这层间接正是关键所在：
 更换适配器，保持内核不变。这就是依赖倒置（dependency inversion）的实践。
+
+Agent 驱动模型的关键约束：**这里没有任何"调大模型"的端口**。引擎从不调用
+LLM，它只做两件确定性的事——为 AI 阶段编译 prompt + 放占位产物（prepare），
+以及对 Agent 写回的产物看门（gate）。真正的"智能"完全由外部 Agent 完成。
 
 本模块只向内依赖 ``core.models``，自身不做任何真实的 IO。
 """
@@ -10,7 +14,7 @@
 from dataclasses import dataclass, field
 from typing import Any, Optional, Protocol, runtime_checkable
 
-from core.models import PatchProposal, PhaseSpec, PhaseStatus, RunState
+from core.models import PhaseSpec, RunState
 
 
 # --------------------------------------------------------------------------
@@ -33,30 +37,50 @@ class CommandResult:
 @dataclass
 class ExecutionContext:
     """交给某个阶段执行器（phase executor）的全部内容。注意它拿到的是*端口*
-    （llm、workspace、store），而不是具体的适配器——因此执行器可以用假实现
-    （fake）来测试，且自身永远不会直接触碰外部世界。"""
+    （workspace、store），而不是具体的适配器——因此执行器可以用假实现（fake）
+    来测试，且自身永远不会直接触碰外部世界。
+
+    这里**没有 llm 端口、也没有预编译好的 prompt_text**：executor 不调模型，
+    prompt 是它在 ``prepare`` 里自己编译出来的产物，而不是别人喂进来的输入。"""
 
     task_id: str
     spec: PhaseSpec
     description: str
     workspace: "Workspace"
-    llm: "LLMClient"
     store: "ArtifactStore"
     branch: str = ""
-    prompt_text: str = ""
     config: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
-class ExecutionOutput:
-    """一个阶段返回的内容。``content`` 会成为该阶段的产物（artifact）；真正负责
-    持久化它以及 ``extra_artifacts`` 的是编排器（而非执行器）——这样就把产物写入
-    集中管理起来。"""
+class PhasePrep:
+    """两段式执行器"第一段"（``prepare``）的产出。
 
-    content: str
-    status: PhaseStatus = PhaseStatus.SUCCEEDED
-    proposal: Optional[PatchProposal] = None
+    - **AI 阶段**（analyze/fix）：``prompt_text`` 是编译好的 ``_prompt_<phase>.md``
+      全文（工具约束 + 阶段提示词 + 领域知识 + 编码规则 + 前置产物 + 环境变量 +
+      输出约定）；``artifact`` 是含哨兵 ``AGENT_PENDING_SENTINEL`` 的占位产物。
+      引擎写下这两者后标记 PENDING、退出，等外部 Agent 读 prompt、写回产物。
+    - **确定性阶段**（intake/apply/verify）：无需 Agent，``prompt_text`` 留空，
+      ``artifact`` 直接是最终产物内容（不含哨兵）；引擎写下后立即进入 Gate Check。
+
+    真正把 ``artifact`` / ``prompt_text`` / ``extra_artifacts`` 落盘的是编排器
+    （而非执行器），以便集中管理产物写入。"""
+
+    artifact: str
+    prompt_text: str = ""
     extra_artifacts: dict[str, str] = field(default_factory=dict)
+    notes: list[str] = field(default_factory=list)
+
+
+@dataclass
+class GateResult:
+    """两段式执行器"第二段"（``gate``）的产出：对 Agent 写回的产物看门。
+    ``passed`` 为真才放行进入下一阶段；``confidence`` 供置信度阈值判断，
+    ``missing_sections`` 记录缺失的必需章节，便于反馈给 Agent 重做。"""
+
+    passed: bool
+    confidence: float = 0.0
+    missing_sections: list[str] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
 
 
@@ -64,38 +88,31 @@ class ExecutionOutput:
 # 端口（接口）
 # --------------------------------------------------------------------------
 
-# 装饰器的作用:让这个协议可以用 isinstance(obj, PhaseExecutor) 在运行时检查。
-# 默认的 Protocol 只能用于静态类型检查(mypy 之类),加了它才能运行时判断
-@runtime_checkable
-class LLMClient(Protocol):
-    """“双手”：无状态，文本进、文本出。可以是 Fake / OpenAI / Claude。"""
-
-    def complete(self, prompt: str) -> str: ...
-
-
-# 待修复的代码工作区，跟它交互的所有手段
+# Agent 干活的 git 工作区（一条专用分支 / 独立 worktree）
+# 装饰器的作用:让这些协议可以用 isinstance(obj, Workspace) 在运行时检查。
+# 默认的 Protocol 只能用于静态类型检查(mypy 之类),加了它才能运行时判断。
 @runtime_checkable
 class Workspace(Protocol):
-    """待修复的代码。所有文件 / 命令 / git 访问都经由此处，
-    因此内核永远不会 import ``subprocess``，也不需要知道 git 是什么。"""
+    """外部 Agent 改代码的地方：一条专用分支 / 独立 worktree。
 
-    # 读一个文件的内容（比如把有 bug 的源码读出来给 LLM 看）
-    def read_file(self, path: str) -> str: ...
+    职责边界很关键——引擎只负责把工作区**准备好**（切/建分支、给出根目录路径）
+    和在里面跑**确定性命令**（如 verify）。它**既不读也不写工作区里的源码**：
+    读代码、改代码都由外部 Agent 在这个目录里直接完成（引擎不代 Agent 动源码，
+    也没有 ``read_file`` / ``write_file`` / ``apply_patch`` 这类口子）。
 
-    # 把新内容写进某个文件（覆盖式写入）
-    def write_file(self, path: str, content: str) -> None: ...
+    通过这一层间接，内核永远不会 import ``subprocess``，也不需要知道 git 是什么。"""
 
-    # 把一份“补丁提案”应用到代码上（批量改多个文件），返回被改动的文件列表
-    def apply_patch(self, proposal: PatchProposal) -> list[str]: ...
+    # Agent 应当在其中读写源码的工作区根目录（引擎据此建 worktree、跑 verify、报给 Agent）
+    def root_path(self) -> str: ...
 
-    # 在这个仓库里跑一条命令（比如 pytest 跑测试，看修没修好），返回退出码 + 输出
-    def run(self, command: list[str]) -> CommandResult: ...
-
-    # 确保切到某个 git 分支（在专用分支上改，不碰主干）；分支不存在就创建
+    # 确保切到某条专用分支（Agent 在这条分支上改，不碰主干）；分支不存在就创建
     def ensure_branch(self, name: str) -> None: ...
 
     # 返回当前所在的 git 分支名
     def current_branch(self) -> str: ...
+
+    # 在工作区里跑一条确定性命令（比如 verify 的 pytest，看修没修好），返回退出码 + 输出
+    def run(self, command: list[str]) -> CommandResult: ...
 
 
 # phase输出持久化，阶段之间传递结果
@@ -133,10 +150,22 @@ class Clock(Protocol):
 # 抽象协议，每个executor具体实现
 @runtime_checkable
 class PhaseExecutor(Protocol):
-    """一个阶段的行为。按名称注册；编排器从清单（manifest）的 ``executor`` 字段
-    查找它，绝不硬编码任何具体阶段。"""
+    """一个阶段的行为，两段式。按名称注册；编排器从清单（manifest）的
+    ``executor`` 字段查找它，绝不硬编码任何具体阶段。
 
-    def run(self, ctx: ExecutionContext) -> ExecutionOutput: ...
+    引擎每次被 Agent 调用时对某阶段的处理：
+
+    1. ``prepare(ctx)`` —— 编译 prompt + 给出（占位或最终）产物。
+       引擎写下产物后，若其中含哨兵则标记 PENDING、退出，等 Agent 干活；
+       否则（确定性阶段）直接进入第 2 步。
+    2. ``gate(ctx, artifact)`` —— Agent 写回产物后，对产物看门
+       （校验必需章节 + 置信度），``passed`` 为真才放行进入下一阶段。
+
+    这两步之间引擎绝不调用任何大模型——中间那段"智能"由外部 Agent 完成。"""
+
+    def prepare(self, ctx: ExecutionContext) -> PhasePrep: ...
+
+    def gate(self, ctx: ExecutionContext, artifact: str) -> GateResult: ...
 
 
 # --------------------------------------------------------------------------
@@ -148,25 +177,33 @@ def test_command_result_ok():
 
 
 def test_runtime_checkable_ports_accept_duck_types():
-    class _LLM:
-        def complete(self, prompt: str) -> str:
-            return "ok"
-
     class _Exec:
-        def run(self, ctx):
-            return ExecutionOutput(content="x")
+        def prepare(self, ctx):
+            return PhasePrep(artifact="x")
 
-    assert isinstance(_LLM(), LLMClient)
+        def gate(self, ctx, artifact):
+            return GateResult(passed=True)
+
     assert isinstance(_Exec(), PhaseExecutor)
-    # 缺少对应方法的类会被拒绝。
-    assert not isinstance(object(), LLMClient)
+
+    # 只实现一半（缺 gate）的类会被拒绝——两段式都得齐。
+    class _Half:
+        def prepare(self, ctx):
+            return PhasePrep(artifact="x")
+
+    assert not isinstance(_Half(), PhaseExecutor)
+    assert not isinstance(object(), PhaseExecutor)
 
 
-def test_execution_output_defaults():
-    out = ExecutionOutput(content="hello")
-    assert out.status is PhaseStatus.SUCCEEDED
-    assert out.proposal is None
-    assert out.extra_artifacts == {}
+def test_phase_prep_and_gate_defaults():
+    prep = PhasePrep(artifact="hello")
+    assert prep.prompt_text == ""
+    assert prep.extra_artifacts == {}
+    assert prep.notes == []
+
+    gate = GateResult(passed=False)
+    assert gate.confidence == 0.0
+    assert gate.missing_sections == []
 
 
 if __name__ == "__main__":
