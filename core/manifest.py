@@ -1,4 +1,5 @@
-"""Manifest 加载器：声明式流程 -> 带类型的 WorkflowManifest。
+"""
+Manifest 加载器：声明式流程 -> 带类型的 WorkflowManifest。
 
 将"流程是什么"（manifest.yaml 中的数据）与"如何运行"（orchestrator
 中的代码）分离。调整流水线顺序或新增阶段时只需改动 YAML。
