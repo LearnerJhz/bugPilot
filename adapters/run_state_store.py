@@ -1,9 +1,15 @@
-"""RunStateStore：``StateStore`` 端口的 JSON 文件实现。
+"""RunStateStore：``StateStore`` 端口的 JSON 文件实现，全局静态工具。
 
 每个任务一份 ``<base>/<task_id>/run_state.json``，记录整次运行的黑板状态
 （``RunState``），支持断点续跑与事后审计。
 
-序列化逻辑放在适配器里，让 ``core.models`` 保持纯数据、不掺 IO。
+它没有实例状态，本质上就是"按 task_id 算出路径并读/写 JSON"的工具人，因此做成
+**全局唯一 + 静态方法**：直接 ``RunStateStore.load(...)`` / ``RunStateStore.save(...)``
+调用，不必到处 `new`。基目录是唯一的全局配置，通过 :func:`RunStateStore.configure`
+设定（默认 ``<项目根>/tasks``）。
+
+序列化逻辑放在适配器里，让 ``core.models`` 保持纯数据、不掺 IO。它仍满足
+``core.ports.StateStore`` 协议（方法都在类上），作为端口传递时把类本身当 store 即可。
 """
 
 from __future__ import annotations  # 让 str | Path 之类注解延迟求值，兼容 <3.10
@@ -17,6 +23,9 @@ from core.models import PhaseResult, PhaseStatus, RunState, RunStatus
 
 STATE_FILENAME = "run_state.json"
 
+# 全局唯一的状态基目录（相对路径一律锚定到项目根，避免受调用时 cwd 影响）。
+_base: Path = PROJECT_ROOT / "tasks"
+
 
 def _result_to_dict(r: PhaseResult) -> dict[str, Any]:
     return {
@@ -26,6 +35,7 @@ def _result_to_dict(r: PhaseResult) -> dict[str, Any]:
         "notes": list(r.notes),
         "started_at": r.started_at,
         "finished_at": r.finished_at,
+        "retry_count": r.retry_count,
     }
 
 
@@ -37,6 +47,7 @@ def _result_from_dict(d: dict[str, Any]) -> PhaseResult:
         notes=list(d.get("notes", []) or []),
         started_at=d.get("started_at"),
         finished_at=d.get("finished_at"),
+        retry_count=int(d.get("retry_count", 0) or 0),
     )
 
 
@@ -70,24 +81,35 @@ def _state_from_dict(d: dict[str, Any]) -> RunState:
 
 
 class RunStateStore:
-    """把 ``RunState`` 存成 JSON。实现 ``core.ports.StateStore``。"""
+    """把 ``RunState`` 存成 JSON 的全局静态工具。实现 ``core.ports.StateStore``。"""
 
-    def __init__(self, base_dir: str | Path = "tasks") -> None:
+    @staticmethod
+    def configure(base_dir: str | Path) -> None:
+        """设定全局状态基目录（相对路径锚定到项目根）。整次运行装配时调一次即可。"""
+        global _base
         base = Path(base_dir)
-        self._base = base if base.is_absolute() else (PROJECT_ROOT / base)
+        _base = base if base.is_absolute() else (PROJECT_ROOT / base)
 
-    def _path(self, task_id: str) -> Path:
-        return self._base / task_id / STATE_FILENAME
+    @staticmethod
+    def base_dir() -> Path:
+        """当前全局状态基目录。"""
+        return _base
 
-    def load(self, task_id: str) -> Optional[RunState]:
-        path = self._path(task_id)
+    @staticmethod
+    def _path(task_id: str) -> Path:
+        return _base / task_id / STATE_FILENAME
+
+    @staticmethod
+    def load(task_id: str) -> Optional[RunState]:
+        path = RunStateStore._path(task_id)
         if not path.exists():
             return None
         data = json.loads(path.read_text(encoding="utf-8"))
         return _state_from_dict(data)
 
-    def save(self, state: RunState) -> None:
-        path = self._path(state.task_id)
+    @staticmethod
+    def save(state: RunState) -> None:
+        path = RunStateStore._path(state.task_id)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(
             json.dumps(_state_to_dict(state), ensure_ascii=False, indent=2),
@@ -100,10 +122,10 @@ class RunStateStore:
 # 造一个 RunState → 存起来 → 读回来 → 打印。产物落在项目根的 testTemp/ 下可直接查看。
 # --------------------------------------------------------------------------
 if __name__ == "__main__":
-    store = RunStateStore(PROJECT_ROOT / "testTemp")
+    RunStateStore.configure(PROJECT_ROOT / "testTemp")
 
     state = RunState(task_id="demo", description="登录页空密码崩溃", status=RunStatus.RUNNING)
-    store.save(state)
+    RunStateStore.save(state)
 
-    loaded = store.load("demo")
+    loaded = RunStateStore.load("demo")
     print(loaded)
