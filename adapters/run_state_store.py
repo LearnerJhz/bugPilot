@@ -56,7 +56,6 @@ def _state_to_dict(s: RunState) -> dict[str, Any]:
         "task_id": s.task_id,
         "status": s.status.value,
         "description": s.description,
-        "branch": s.branch,
         "current_phase": s.current_phase,
         "phase_results": {pid: _result_to_dict(r) for pid, r in s.phase_results.items()},
         "started_at": s.started_at,
@@ -69,7 +68,6 @@ def _state_from_dict(d: dict[str, Any]) -> RunState:
         task_id=d["task_id"],
         status=RunStatus(d.get("status", "idle")),
         description=d.get("description", ""),
-        branch=d.get("branch", ""),
         current_phase=d.get("current_phase"),
         phase_results={
             pid: _result_from_dict(rd)
