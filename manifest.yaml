@@ -4,12 +4,26 @@ version: 1
 project:
   name: demo
   display_name: "Bugpilot Demo Pipeline"
-  branch_prefix: "bugpilot"
-  # verify 阶段在工作区里运行、用于验证修复的命令。
+
+  # verify 阶段在工作区里运行、用于验证修复的命令（cwd = --repo 指定的工作区根）。
+  # demo：跑靶子仓库里的 test_algo.py，坏代码上失败(退出码1)、修好后通过(退出码0)。
   verify_command:
     - python3
-    - -c
-    - "print('tests passed')"
+    - test_algo.py
+
+  # 引擎驱动 Agent（路线B）：AI 阶段由引擎起这个 Agent CLI 自走执行。
+  # 只起 CLI，用哪个模型由环境变量决定（如把 ANTHROPIC_BASE_URL 指向 DeepSeek 端点）。
+  agent:
+    cmd: claude                       # Claude Code headless
+    permission_mode: bypassPermissions # 无头自走：放开权限，不弹交互确认
+    max_turns: 40                     # 单阶段轮次上限，防跑飞烧钱
+    timeout_s: 1800                   # 子进程墙钟超时，挂了就 kill
+    # 强制走 flash 省钱：不加的话 headless 默认走 sonnet 档 → 被映射成 deepseek-v4-pro（贵）。
+    # 端点/token 由 ~/.claude/settings.json（cc-switch 那份）提供，这里无需重复配置。
+    extra_args:
+      - --model
+      - deepseek-v4-flash
+    env: {}                           # 追加/覆盖的环境变量（默认继承当前 shell，一般留空即可）
 
 # phase 描述了这个阶段的细节：由哪个 executor 驱动、产出哪个文件等。
 # 引擎负责调度，executor 只填产物。新增 phase 只需改本文件并注册 executor，无需改引擎。
@@ -31,7 +45,13 @@ phases:
     output: 02-analyze.md
     required_sections:
       - "## Root Cause"
+      - "## Confidence"
       - "## Plan"
+    # 置信度门：Agent 自评 < 0.6 就打回，就地回滚重试（带上"哪里不确定"的反馈）。
+    confidence_min: 0.6
+    retry_on_fail:
+      target: analyze
+      max_retries: 2
 
   - id: fix
     executor: fix
@@ -42,6 +62,9 @@ phases:
     required_sections:
       - "## Changes"
       - "## Self Check"
+    retry_on_fail:
+      target: fix
+      max_retries: 1
 
   - id: apply
     executor: apply
@@ -61,3 +84,7 @@ phases:
     required_sections:
       - "## Verdict"
       - "## Evidence"
+    # verify 失败（verdict=fail）→ 回滚到 analyze 重新定位根因再修一遍。
+    retry_on_fail:
+      target: analyze
+      max_retries: 2

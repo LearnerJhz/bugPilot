@@ -1,0 +1,71 @@
+{
+  // 调试配置文件。VSCode 的「Run and Debug（运行和调试）」面板读的就是它。
+  // 这里调试的是真正的 CLI（等价 `python3 -m cli ...`），入口在 cli/__main__.py。
+  "version": "0.2.0",
+  "configurations": [
+    {
+      // ① 正常任务：从头推进（占位符短路会停在下一个待办阶段）
+      "name": "Debug CLI: run demo1 (--description)",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "cli",
+      "args": ["run", "demo1", "--description", "https://github.com/xxx/issues/123"],
+      "console": "integratedTerminal",
+      "cwd": "${workspaceFolder}",
+      "justMyCode": false
+    },
+    {
+      // ② 被打断后：只跑单个阶段
+      "name": "Debug CLI: run demo1 --only intake",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "cli",
+      "args": ["run", "demo1", "--only", "intake"],
+      "console": "integratedTerminal",
+      "cwd": "${workspaceFolder}",
+      "justMyCode": false
+    },
+    {
+      // ③ 只预览起始阶段将写入的 prompt，不落盘
+      "name": "Debug CLI: run demo1 --preview",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "cli",
+      "args": ["run", "demo1", "--preview"],
+      "console": "integratedTerminal",
+      "cwd": "${workspaceFolder}",
+      "justMyCode": false
+    },
+    {
+      // ④ 查看进度
+      "name": "Debug CLI: status demo1",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "cli",
+      "args": ["status", "demo1"],
+      "console": "integratedTerminal",
+      "cwd": "${workspaceFolder}",
+      "justMyCode": false
+    },
+    {
+      // ⑤ 通用：启动时弹框让你自己输入参数（空格分隔）
+      "name": "Debug CLI: 自定义参数",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "cli",
+      "args": "${input:cliArgs}",
+      "console": "integratedTerminal",
+      "cwd": "${workspaceFolder}",
+      "justMyCode": false
+    }
+  ],
+  "inputs": [
+    {
+      // 弹框输入命令行参数，用空格分隔（VSCode 会自动按空格拆成多个 arg）
+      "id": "cliArgs",
+      "type": "promptString",
+      "description": "输入 CLI 参数（空格分隔），例如: run demo1 --only intake",
+      "default": "run demo1 --description \"登录页空密码崩溃\""
+    }
+  ]
+}

@@ -83,6 +83,7 @@ class WorkflowManifest:
     def from_dict(cls, data: dict[str, Any]) -> "WorkflowManifest":
         phases = []
         for raw in data.get("phases", []):
+            conf_min = raw.get("confidence_min")
             phases.append(
                 PhaseSpec(
                     id=raw["id"],
@@ -91,6 +92,8 @@ class WorkflowManifest:
                     depends_on=list(raw.get("depends_on", []) or []),
                     required_sections=list(raw.get("required_sections", []) or []),
                     prompt=raw.get("prompt"),
+                    confidence_min=float(conf_min) if conf_min is not None else None,
+                    retry_on_fail=dict(raw["retry_on_fail"]) if raw.get("retry_on_fail") else None,
                 )
             )
         return cls(

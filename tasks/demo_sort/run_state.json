@@ -1,0 +1,59 @@
+{
+  "task_id": "demo_sort",
+  "status": "succeeded",
+  "description": "test_algo.py 失败：bubble_sort 结果是降序，应为升序。请定位 buggy.py 里的根因并修复，使 test_algo.py 全部用例通过。",
+  "current_phase": null,
+  "phase_results": {
+    "intake": {
+      "phase_id": "intake",
+      "status": "succeeded",
+      "output_path": "/Users/bytedance/person/githubBug/bugPilot/tasks/demo_sort/01-intake.md",
+      "notes": [],
+      "started_at": "2026-07-27T02:13:41+00:00",
+      "finished_at": "2026-07-27T02:13:41+00:00",
+      "retry_count": 0
+    },
+    "analyze": {
+      "phase_id": "analyze",
+      "status": "succeeded",
+      "output_path": "/Users/bytedance/person/githubBug/bugPilot/tasks/demo_sort/02-analyze.md",
+      "notes": [
+        "agent exit=0 dur=20.5s timeout=False"
+      ],
+      "started_at": "2026-07-27T02:13:41+00:00",
+      "finished_at": "2026-07-27T02:14:02+00:00",
+      "retry_count": 0
+    },
+    "fix": {
+      "phase_id": "fix",
+      "status": "succeeded",
+      "output_path": "/Users/bytedance/person/githubBug/bugPilot/tasks/demo_sort/03-fix.md",
+      "notes": [
+        "agent exit=0 dur=15.5s timeout=False"
+      ],
+      "started_at": "2026-07-27T02:14:02+00:00",
+      "finished_at": "2026-07-27T02:14:17+00:00",
+      "retry_count": 0
+    },
+    "apply": {
+      "phase_id": "apply",
+      "status": "succeeded",
+      "output_path": "/Users/bytedance/person/githubBug/bugPilot/tasks/demo_sort/04-apply.md",
+      "notes": [],
+      "started_at": "2026-07-27T02:14:17+00:00",
+      "finished_at": "2026-07-27T02:14:17+00:00",
+      "retry_count": 0
+    },
+    "verify": {
+      "phase_id": "verify",
+      "status": "succeeded",
+      "output_path": "/Users/bytedance/person/githubBug/bugPilot/tasks/demo_sort/05-verify.md",
+      "notes": [],
+      "started_at": "2026-07-27T02:14:17+00:00",
+      "finished_at": "2026-07-27T02:14:17+00:00",
+      "retry_count": 0
+    }
+  },
+  "started_at": "2026-07-27T02:13:41+00:00",
+  "updated_at": "2026-07-27T02:14:17+00:00"
+}

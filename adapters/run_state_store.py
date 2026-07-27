@@ -39,10 +39,16 @@ def _result_to_dict(r: PhaseResult) -> dict[str, Any]:
     }
 
 
+# 旧产物里单阶段"没过"曾写作 "failed"，现已统一为 "blocked"；读旧文件时平滑迁移。
+_LEGACY_PHASE_STATUS = {"failed": "blocked"}
+
+
 def _result_from_dict(d: dict[str, Any]) -> PhaseResult:
+    status_raw = d.get("status", "pending")
+    status_raw = _LEGACY_PHASE_STATUS.get(status_raw, status_raw)
     return PhaseResult(
         phase_id=d["phase_id"],
-        status=PhaseStatus(d.get("status", "pending")),
+        status=PhaseStatus(status_raw),
         output_path=d.get("output_path"),
         notes=list(d.get("notes", []) or []),
         started_at=d.get("started_at"),

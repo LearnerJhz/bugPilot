@@ -1,0 +1,52 @@
+# 阶段任务：analyze
+
+你是一个被引擎调度的自走 Agent。请**独立完成本阶段的全部工作**：读代码、
+必要时改代码、跑命令定位问题，最后把结论写成产物文件。不要向人提问、不要中途停下。
+
+## 本次任务
+test_algo.py 失败：bubble_sort 结果是降序，应为升序。请定位 buggy.py 里的根因并修复，使 test_algo.py 全部用例通过。
+
+## 工作区（在这里读/改代码）
+- 代码根目录: /Users/bytedance/person/githubBug/bugpilot-demo-target
+
+## 前置阶段产物（上下文，供你参考）
+### 01-intake.md
+# Intake — demo_sort
+
+## Summary
+test_algo.py 失败：bubble_sort 结果是降序，应为升序。请定位 buggy.py 里的根因并修复，使 test_algo.py 全部用例通过。
+
+## Inputs
+- Task ID: demo_sort
+- Request: test_algo.py 失败：bubble_sort 结果是降序，应为升序。请定位 buggy.py 里的根因并修复，使 test_algo.py 全部用例通过。
+- Workspace: /Users/bytedance/person/githubBug/bugpilot-demo-target
+- Intake at: 2026-07-27T02:13:41+00:00
+
+## 阶段提示词
+你正处在 **代码分析（analyze）** 阶段。目标：基于任务描述与前置产物，在真实代码里
+定位这个 bug 的**根因**，并给出可执行的修复方案。**只分析、先不要改代码**。
+
+请你自主完成：
+1. 阅读工作区里相关的源码（按报错栈、关键类名、复现路径去定位）。
+2. 找到导致该 bug 的**真正根因**（不是表象），必要时读多处代码互相印证。
+3. 评估你对这个根因判断的**置信度**（0~1 的小数）。
+4. 规划最小、聚焦的修复策略（改哪些文件/函数、怎么改、为什么这样改）。
+
+产物必须包含这些二级标题：
+
+- `## Root Cause`：一句话根因 + 关键证据（文件:行号、调用链）。
+- `## Confidence`：一个 0~1 的小数，例如 `0.85`。低于阈值引擎会打回让你换思路重来。
+- `## Plan`：分点列出修复步骤（改哪个文件、改什么）。
+
+如果上方有"上一轮失败反馈"，务必先针对它调整——不要重复上一轮被否掉的根因假设。
+
+## 硬约束（务必遵守）
+1. 把本阶段结论写入产物文件（覆盖写）：`/Users/bytedance/person/githubBug/bugPilot/tasks/demo_sort/02-analyze.md`
+2. 该产物**必须包含以下二级标题**（原文，勿翻译/改写，引擎按字符串校验）：
+   - `## Root Cause`
+   - `## Confidence`
+   - `## Plan`
+3. 只改与本 bug 相关的代码，改动落在上面的工作区里。
+4. 全程自主完成，不要询问、不要等待确认。
+
+完成后请确认产物文件 `/Users/bytedance/person/githubBug/bugPilot/tasks/demo_sort/02-analyze.md` 已按要求写好。
