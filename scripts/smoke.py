@@ -12,6 +12,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from adapters.fake_agent_runner import FakeAgentRunner  # noqa: E402
+from core.manifest import load_manifest  # noqa: E402
 from core.orchestrator import run_pipeline  # noqa: E402
 
 
@@ -26,8 +27,33 @@ class _RetryThenPassAgent(FakeAgentRunner):
         return super().run(prompt=prompt, workspace=workspace, phase_id=phase_id, timeout_s=timeout_s)
 
 
+def _seed_workspace(workdir):
+    """给冒烟用的临时工作区补上 verify 阶段要跑的脚本。
+
+    verify 是确定性阶段：它会在工作区里**真的执行** manifest 的
+    ``project.verify_command``。而冒烟只想验证引擎编排，工作区是个空的临时目录、
+    没有任何靶子代码，命令必然失败 → verify 未过 → 回滚重试直到 BLOCKED。
+
+    所以这里按 manifest 里声明的脚本名就地生成一份"必然通过"的桩。脚本名从
+    manifest 反查而非写死，冒烟才不会被业务配置绑住——你把 ``verify_command``
+    换成别的 ``.py`` 靶子，冒烟依旧自洽。
+    """
+    command = load_manifest().project.get("verify_command", []) or []
+    scripts = [a for a in command if isinstance(a, str) and a.endswith(".py")]
+    if not scripts:
+        print(
+            f"⚠️  verify_command={command} 未引用 .py 脚本，冒烟无法为它准备工作区；"
+            f"verify 阶段可能因此失败。"
+        )
+    for name in scripts:
+        Path(workdir, name).write_text(
+            'print("[smoke stub] tests passed")\n', encoding="utf-8"
+        )
+
+
 def _run(task_id, agent):
     workdir = tempfile.mkdtemp(prefix="bugpilot-smoke-")
+    _seed_workspace(workdir)
     result = run_pipeline(
         task_id, description="登录页空密码提交崩溃", repo=workdir, agent_runner=agent, log=print
     )
